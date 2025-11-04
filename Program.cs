@@ -18,8 +18,11 @@ builder.Services.AddDbContext<ReportDbContext>(options =>
 // 匯入服務
 builder.Services.AddScoped<IImportService, ImportService>();
 
-// HTML 解析服務（團隊成員實作完成後，可替換為實際實作）
-builder.Services.AddScoped<IHtmlParserService, HtmlParserServiceStub>();
+// HTML 解析服務
+builder.Services.AddScoped<IHtmlParserService, HtmlParserService>();
+
+// XLSX 解析服務
+builder.Services.AddScoped<IXlsxParserService, XlsxParserService>();
 
 var app = builder.Build();
 

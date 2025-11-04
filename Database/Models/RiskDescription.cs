@@ -34,5 +34,5 @@ public partial class RiskDescription
     public int? PluginId { get; set; }
 
     [StringLength(255)]
-    public string Signature { get; set; }
+    required public string Signature { get; set; }
 }
