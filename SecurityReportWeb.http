@@ -4,3 +4,55 @@ GET {{SecurityReportWeb_HostAddress}}/weatherforecast/
 Accept: application/json
 
 ###
+
+# 上傳 XLSX 檔案並匯入資料庫
+POST {{SecurityReportWeb_HostAddress}}/api/import/upload-xlsx
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="非電算中心委外系統清單.xlsx"
+Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+
+< ./非電算中心委外系統清單/非電算中心委外系統清單.xlsx
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+###
+
+# 僅解析 XLSX 檔案（不匯入資料庫）
+POST {{SecurityReportWeb_HostAddress}}/api/import/parse-xlsx
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="非電算中心委外系統清單.xlsx"
+Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+
+< ./非電算中心委外系統清單/非電算中心委外系統清單.xlsx
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+###
+
+# 僅解析 HTML 檔案（不匯入資料庫）
+POST {{SecurityReportWeb_HostAddress}}/api/import/parse-html
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="report-account.ncut.edu.tw.html"
+Content-Type: text/html
+
+< ./非電算中心委外系統清單/report-account.ncut.edu.tw.html
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+###
+
+# 上傳 HTML 檔案並匯入資料庫
+POST {{SecurityReportWeb_HostAddress}}/api/import/upload-html
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="report-example.html"
+Content-Type: text/html
+
+< ./非電算中心委外系統清單/report-account.ncut.edu.tw.html
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+###
