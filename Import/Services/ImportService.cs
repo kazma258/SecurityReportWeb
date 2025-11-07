@@ -146,8 +146,9 @@ public class ImportService : IImportService
 
         await _dbContext.SaveChangesAsync();
 
-        // Build lookup for UrlList by WebName
-        var urlByWebName = await _dbContext.UrlLists.AsNoTracking().ToDictionaryAsync(x => x.WebName, x => x.UrlId);
+        // 重新載入 UrlList，建立以 Url host 為索引的對應表
+        var urlListRecords = await _dbContext.UrlLists.AsNoTracking().ToListAsync();
+        var urlByNormalizedHost = BuildUrlIdByHostLookup(urlListRecords);
 
         // ZapReport upsert by (SiteUrlId, GeneratedDay)
         // ReportId 由 (SiteUrlId, GeneratedDay) 計算而得
@@ -155,11 +156,11 @@ public class ImportService : IImportService
         {
             foreach (var dto in request.ZapReports)
             {
-                if (!urlByWebName.TryGetValue(dto.SiteWebName, out var siteUrlId))
+                if (!TryResolveUrlId(dto.SiteWebName, urlByNormalizedHost, out var siteUrlId))
                 {
                     // 無對應站點，略過
                     result.ZapReportsSkipped++;
-                    result.SkippedReasons.Add($"ZapReport 略過：找不到 WebName='{dto.SiteWebName}' 對應的 UrlList。請確認 siteWebName 與 UrlList.webName 一致。");
+                    result.SkippedReasons.Add($"ZapReport 略過：找不到 '{dto.SiteWebName}' 對應的 UrlList.Url。");
                     continue;
                 }
 
@@ -198,20 +199,28 @@ public class ImportService : IImportService
         // ZapAlertDetail insert; 可選擇先清掉指定日的既有資料避免重複
         if (request.ZapAlerts?.Count > 0)
         {
-            var validAlerts = request.ZapAlerts.Where(x => urlByWebName.ContainsKey(x.RootWebName)).ToList();
-            var skippedAlerts = request.ZapAlerts.Where(x => !urlByWebName.ContainsKey(x.RootWebName)).ToList();
+            var validAlerts = new List<ZapAlertDetailImportDto>();
+            var rootUrlIdLookup = new Dictionary<ZapAlertDetailImportDto, Guid>();
 
-            foreach (var alert in skippedAlerts)
+            foreach (var alert in request.ZapAlerts)
             {
-                result.ZapAlertsSkipped++;
-                result.SkippedReasons.Add($"ZapAlert 略過：找不到 WebName='{alert.RootWebName}' 對應的 UrlList。請確認 rootWebName 與 UrlList.webName 一致。");
+                if (TryResolveUrlId(alert.RootWebName, urlByNormalizedHost, out var rootUrlId))
+                {
+                    validAlerts.Add(alert);
+                    rootUrlIdLookup[alert] = rootUrlId;
+                }
+                else
+                {
+                    result.ZapAlertsSkipped++;
+                    result.SkippedReasons.Add($"ZapAlert 略過：找不到 '{alert.RootWebName}' 對應的 UrlList.Url。");
+                }
             }
 
             var groups = validAlerts
-                .GroupBy(x => (RootUrlId: urlByWebName[x.RootWebName], x.ReportDay))
+                .GroupBy(x => (RootUrlId: rootUrlIdLookup[x], x.ReportDay))
                 .ToList();
 
-            if (request.ReplaceAlertsForSubmittedDays)
+            if (groups.Count > 0 && request.ReplaceAlertsForSubmittedDays)
             {
                 foreach (var g in groups)
                 {
@@ -223,22 +232,22 @@ public class ImportService : IImportService
 
             foreach (var g in groups)
             {
-                foreach (var dto in g)
+                foreach (var alert in g)
                 {
                     _dbContext.ZapalertDetails.Add(new ZapalertDetail
                     {
-                        RootUrlId = g.Key.RootUrlId,
-                        Url = dto.Url,
-                        ReportDate = dto.ReportDate,
-                        ReportDay = dto.ReportDay,
-                        RiskName = dto.RiskName,
-                        Level = dto.Level,
-                        Method = dto.Method,
-                        Parameter = dto.Parameter,
-                        Attack = dto.Attack,
-                        Evidence = dto.Evidence,
-                        Status = dto.Status ?? "Open",
-                        OtherInfo = dto.OtherInfo,
+                        RootUrlId = rootUrlIdLookup[alert],
+                        Url = alert.Url,
+                        ReportDate = alert.ReportDate,
+                        ReportDay = alert.ReportDay,
+                        RiskName = alert.RiskName,
+                        Level = alert.Level,
+                        Method = alert.Method,
+                        Parameter = alert.Parameter,
+                        Attack = alert.Attack,
+                        Evidence = alert.Evidence,
+                        Status = alert.Status ?? "Open",
+                        OtherInfo = alert.OtherInfo,
                     });
                     result.ZapAlertsInserted++;
                 }
@@ -248,6 +257,86 @@ public class ImportService : IImportService
         await _dbContext.SaveChangesAsync();
         await trx.CommitAsync();
         return result;
+    }
+
+    private static Dictionary<string, Guid> BuildUrlIdByHostLookup(IEnumerable<UrlList> urlLists)
+    {
+        var lookup = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in urlLists)
+        {
+            if (string.IsNullOrWhiteSpace(item.Url))
+            {
+                continue;
+            }
+
+            var host = NormalizeHost(item.Url);
+            if (string.IsNullOrEmpty(host))
+            {
+                continue;
+            }
+
+            if (!lookup.ContainsKey(host))
+            {
+                lookup[host] = item.UrlId;
+            }
+        }
+
+        return lookup;
+    }
+
+    private static bool TryResolveUrlId(string? candidate, IDictionary<string, Guid> byHost, out Guid urlId)
+    {
+        urlId = default;
+
+        var normalized = NormalizeHost(candidate);
+        if (!string.IsNullOrEmpty(normalized) && byHost.TryGetValue(normalized, out urlId))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string NormalizeHost(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = value.Trim();
+        var candidate = trimmed.Contains("://", StringComparison.Ordinal)
+            ? trimmed
+            : $"https://{trimmed}";
+
+        if (Uri.TryCreate(candidate, UriKind.Absolute, out var uri))
+        {
+            return uri.Host.ToLowerInvariant();
+        }
+
+        candidate = trimmed.ToLowerInvariant();
+        if (candidate.StartsWith("http://", StringComparison.Ordinal))
+        {
+            candidate = candidate[7..];
+        }
+        else if (candidate.StartsWith("https://", StringComparison.Ordinal))
+        {
+            candidate = candidate[8..];
+        }
+
+        var slashIndex = candidate.IndexOf('/');
+        if (slashIndex >= 0)
+        {
+            candidate = candidate[..slashIndex];
+        }
+
+        if (candidate.StartsWith("www.", StringComparison.Ordinal))
+        {
+            candidate = candidate[4..];
+        }
+
+        return candidate;
     }
 }
 
