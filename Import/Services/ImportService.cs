@@ -24,6 +24,20 @@ public class ImportService : IImportService
     }
 
     public async Task<ImportResultDto> ImportAsync(ImportRequestDto request)
+    // 匯入功能主程式，依據傳入參數進行多表 Upsert、Alert 明細批量寫入
+    // 步驟：
+    // 1. 開啟資料庫交易 (transaction)
+    // 2. 處理 UrlList：依 WebName 判斷新增或更新（upsert），並產生 UrlId
+    // 3. 取得最新 UrlList、建構 Host->UrlId 對照
+    // 4. 處理 RiskDescription：依 Name 判斷 upsert，計算 Signature
+    // 5. 建構 Signature->RiskId 對照 (如後續需要)
+    // 6. 處理 ZapReport：依 WebName+ReportDay upsert，標註刪除/同步報告
+    // 7. 處理 ZapAlert 明細：
+    //    a) 依 WebName 對應 UrlId，補齊 foreign key
+    //    b) 分組：RootUrlId+ReportDay
+    //    c) 若指定 ReplaceAlertsForSubmittedDays，先清除同組舊資料
+    //    d) 將 alert 批量寫入明細資料表
+    // 8. 儲存所有變更、提交交易、回傳結果
     {
         var result = new ImportResultDto();
 
@@ -260,6 +274,10 @@ public class ImportService : IImportService
     }
 
     private static Dictionary<string, Guid> BuildUrlIdByHostLookup(IEnumerable<UrlList> urlLists)
+    // 建立 UrlId 對應的 Dictionary
+    // 以 Url 的 host 為 key，UrlId 為 value
+    // 例如：https://www.google.com 的 host 為 www.google.com
+    // 所以 lookup["www.google.com"] = UrlId
     {
         var lookup = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
 
@@ -286,6 +304,11 @@ public class ImportService : IImportService
     }
 
     private static bool TryResolveUrlId(string? candidate, IDictionary<string, Guid> byHost, out Guid urlId)
+    // 嘗試解析 UrlId 對應的 Url
+    // 以 Url 的 host 為 key，UrlId 為 value
+    // 例如：byHost["www.google.com"] = UrlId
+    // 這樣可以快速查詢 UrlId 對應的 Url
+    // 例如：byHost["www.google.com"] = UrlId
     {
         urlId = default;
 
@@ -299,6 +322,10 @@ public class ImportService : IImportService
     }
 
     private static string NormalizeHost(string? value)
+    // 正規化 Url 的 host
+    // 例如：https://www.google.com 的 host 為 www.google.com
+    // 所以 NormalizeHost("https://www.google.com") = "www.google.com"
+    // 並且 NormalizeHost("www.google.com/test") = "www.google.com"
     {
         if (string.IsNullOrWhiteSpace(value))
         {
