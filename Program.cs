@@ -24,6 +24,18 @@ builder.Services.AddScoped<IHtmlParserService, HtmlParserService>();
 // XLSX 解析服務
 builder.Services.AddScoped<IXlsxParserService, XlsxParserService>();
 
+// CORS 設定
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowLocalhost", policy =>
+    {
+        policy.WithOrigins("http://localhost:3333")
+              .AllowAnyMethod()
+              .AllowAnyHeader()
+              .AllowCredentials();
+    });
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -34,6 +46,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// 啟用 CORS（必須在 UseAuthorization 之前）
+app.UseCors("AllowLocalhost");
 
 app.UseAuthorization();
 
