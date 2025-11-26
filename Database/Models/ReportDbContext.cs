@@ -35,6 +35,8 @@ public partial class ReportDbContext : DbContext
 
     public virtual DbSet<AuditLog> AuditLogs { get; set; }
 
+    public virtual DbSet<AlertStatusHistory> AlertStatusHistories { get; set; }
+
     private bool _isAuditing = false;
 
     /// <summary>
@@ -315,6 +317,45 @@ public partial class ReportDbContext : DbContext
             entity.Property(e => e.ChangedAtUtc).HasColumnType("datetime2");
             entity.Property(e => e.ChangedBy).HasMaxLength(255);
             entity.ToTable("AuditLogs");
+        });
+
+        modelBuilder.Entity<AlertStatusHistory>(entity =>
+        {
+            entity.HasKey(e => e.HistoryId).HasName("PK_AlertStatusHistory_HistoryId");
+
+            entity.ToTable("AlertStatusHistory");
+
+            entity.Property(e => e.HistoryId).ValueGeneratedOnAdd();
+            entity.Property(e => e.OldStatus).HasMaxLength(255);
+            entity.Property(e => e.NewStatus)
+                .IsRequired()
+                .HasMaxLength(255);
+            entity.Property(e => e.UpdatedAt)
+                .IsRequired()
+                .HasColumnType("datetime2")
+                .HasDefaultValueSql("GETUTCDATE()");
+            entity.Property(e => e.UpdatedBy)
+                .IsRequired()
+                .HasMaxLength(255);
+            entity.Property(e => e.UpdatedByRole)
+                .IsRequired()
+                .HasMaxLength(50);
+
+            // 外鍵關聯到 ZAPAlertDetail
+            entity.HasOne(d => d.Alert)
+                .WithMany()
+                .HasForeignKey(d => d.AlertId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_AlertStatusHistory_ZAPAlertDetail");
+
+            // 索引：優化依警報 ID 查詢狀態歷史的效能
+            entity.HasIndex(e => e.AlertId, "IX_AlertStatusHistory_AlertId");
+
+            // 索引：優化依時間範圍查詢的效能
+            entity.HasIndex(e => e.UpdatedAt, "IX_AlertStatusHistory_UpdatedAt");
+
+            // 索引：優化依狀態查詢的效能
+            entity.HasIndex(e => e.NewStatus, "IX_AlertStatusHistory_NewStatus");
         });
 
         OnModelCreatingPartial(modelBuilder);
