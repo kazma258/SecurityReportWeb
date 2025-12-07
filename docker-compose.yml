@@ -17,3 +17,8 @@ services:
       - SA_PASSWORD=${SA_PASSWORD}
     ports:
       - "8888:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+
+volumes:
+  sqlserver_data:
