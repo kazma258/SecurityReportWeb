@@ -2,18 +2,60 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using SecurityReportWeb.Database.Models;
 using SecurityReportWeb.Import.Services;
+using Microsoft.Extensions.Logging;
 using System;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// 獲取 Logger 用於記錄啟動資訊
+var logger = LoggerFactory.Create(config => config.AddConsole()).CreateLogger("Program");
 
+// 加入服務到容器
 builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+//讀取連線字串並替換 ${SA_PASSWORD}
+var conn = builder.Configuration.GetConnectionString("DefaultConnection") ?? string.Empty;
+var saPassword = builder.Configuration["SA_PASSWORD"] ?? Environment.GetEnvironmentVariable("SA_PASSWORD");
+if (!string.IsNullOrWhiteSpace(saPassword))
+{
+    conn = conn.Replace("${SA_PASSWORD}", saPassword);
+}
+
+// 🔍 輸出連接字串資訊（用於除錯）
+logger.LogInformation("=== 資料庫連線配置除錯資訊 ===");
+logger.LogInformation("環境: {Environment}", builder.Environment.EnvironmentName);
+logger.LogInformation("原始連接字串（從配置讀取）: {ConnectionString}", 
+    builder.Configuration.GetConnectionString("DefaultConnection") ?? "未設定");
+logger.LogInformation("SA_PASSWORD 環境變數: {Status}", 
+    string.IsNullOrEmpty(saPassword) ? "❌ 未設定" : "✅ 已設定");
+if (!string.IsNullOrEmpty(conn))
+{
+    // 隱藏密碼部分
+    var maskedConn = conn;
+    if (!string.IsNullOrEmpty(saPassword))
+    {
+        maskedConn = conn.Replace(saPassword, "***");
+    }
+    logger.LogInformation("實際使用的連接字串: {MaskedConnectionString}", maskedConn);
+    
+    // 提取伺服器資訊
+    var serverMatch = System.Text.RegularExpressions.Regex.Match(conn, @"Server=([^;]+)");
+    if (serverMatch.Success)
+    {
+        logger.LogInformation("資料庫伺服器: {Server}", serverMatch.Groups[1].Value);
+    }
+}
+else
+{
+    logger.LogWarning("❌ 警告：連接字串為空！");
+}
+logger.LogInformation("====================================");
+
 builder.Services.AddDbContext<ReportDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+ options.UseSqlServer(conn));
 
 // 匯入服務
 builder.Services.AddScoped<IImportService, ImportService>();
@@ -30,13 +72,44 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowLocalhost", policy =>
     {
         policy.WithOrigins("http://localhost:3333")
-              .AllowAnyMethod()
-              .AllowAnyHeader()
-              .AllowCredentials();
+     .AllowAnyMethod()
+     .AllowAnyHeader()
+     .AllowCredentials();
     });
 });
 
 var app = builder.Build();
+
+// ✅ 自動建立資料庫（直接以最新結構建立，不執行 Migration）
+using (var scope = app.Services.CreateScope())
+{
+    var context = scope.ServiceProvider.GetRequiredService<ReportDbContext>();
+    var appLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    try
+    {
+        // 等待資料庫連線就緒（容器啟動需要時間）
+        await EnsureDatabaseReady(context, appLogger);
+
+        //直接以目前的模型建立資料庫結構（跳過 Migration 歷史）
+        var created = await context.Database.EnsureCreatedAsync();
+
+        if (created)
+        {
+            appLogger.LogInformation("✅ 資料庫建立成功（全新建立）");
+        }
+        else
+        {
+            appLogger.LogInformation("ℹ️ 資料庫已存在，跳過建立");
+        }
+    }
+    catch (Exception ex)
+    {
+        appLogger.LogError(ex, "❌ 資料庫建立失敗: {Message}", ex.Message);
+        // 在 Docker 環境中，我們希望應用程式繼續運行，而非崩潰
+        // throw; // 可取消註解讓應用程式在資料庫建立失敗時終止
+    }
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -55,3 +128,40 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+// 確保資料庫連線就緒的輔助方法
+static async Task EnsureDatabaseReady(ReportDbContext context, ILogger logger, int maxRetries = 30, int delaySeconds = 2)
+{
+    for (int i = 0; i < maxRetries; i++)
+    {
+        try
+        {
+            // 使用 CanConnectAsync 檢查連接
+            var canConnect = await context.Database.CanConnectAsync();
+            if (canConnect)
+            {
+                // 進一步驗證：嘗試執行一個簡單的查詢
+                await context.Database.ExecuteSqlRawAsync("SELECT 1");
+                logger.LogInformation("✅ 資料庫連線就緒");
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "⏳ 等待資料庫啟動... (嘗試 {Attempt}/{MaxRetries}): {Message}", 
+                i + 1, maxRetries, ex.Message);
+
+            if (i == maxRetries - 1)
+            {
+                logger.LogError(ex, "❌ 資料庫連接失敗，最後一次錯誤: {Message}", ex.Message);
+                if (ex.InnerException != null)
+                {
+                    logger.LogError("內部異常: {InnerMessage}", ex.InnerException.Message);
+                }
+                throw new TimeoutException($"資料庫在 {maxRetries * delaySeconds} 秒內未能就緒: {ex.Message}", ex);
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+        }
+    }
+}
