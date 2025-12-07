@@ -260,6 +260,12 @@ public partial class ReportDbContext : DbContext
 
             entity.HasIndex(e => e.RiskName, "ZAPAlertDetail_index_6");
 
+            // 優化儀表板查詢：依狀態和風險等級查詢
+            entity.HasIndex(e => new { e.Status, e.Level }, "IX_ZAPAlertDetail_Status_Level");
+
+            // 優化時間範圍查詢：依報告日期和狀態查詢
+            entity.HasIndex(e => new { e.ReportDay, e.Status }, "IX_ZAPAlertDetail_ReportDay_Status");
+
             entity.Property(e => e.AlertId).HasColumnName("AlertID");
             entity.Property(e => e.Level).HasMaxLength(255);
             entity.Property(e => e.Method).HasMaxLength(255);

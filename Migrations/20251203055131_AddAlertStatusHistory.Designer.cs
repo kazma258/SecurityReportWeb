@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SecurityReportWeb.Database.Models;
 
@@ -11,9 +12,11 @@ using SecurityReportWeb.Database.Models;
 namespace SecurityReportWeb.Migrations
 {
     [DbContext(typeof(ReportDbContext))]
-    partial class ReportDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251203055131_AddAlertStatusHistory")]
+    partial class AddAlertStatusHistory
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -279,10 +282,6 @@ namespace SecurityReportWeb.Migrations
 
                     b.HasKey("AlertId")
                         .HasName("PK__ZAPAlert__EBB16AEDB761AB67");
-
-                    b.HasIndex(new[] { "ReportDay", "Status" }, "IX_ZAPAlertDetail_ReportDay_Status");
-
-                    b.HasIndex(new[] { "Status", "Level" }, "IX_ZAPAlertDetail_Status_Level");
 
                     b.HasIndex(new[] { "RootUrlId", "ReportDay" }, "ZAPAlertDetail_index_3");
 
