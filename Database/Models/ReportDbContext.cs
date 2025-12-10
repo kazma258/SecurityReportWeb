@@ -37,6 +37,12 @@ public partial class ReportDbContext : DbContext
 
     public virtual DbSet<AlertStatusHistory> AlertStatusHistories { get; set; }
 
+    public virtual DbSet<User> Users { get; set; }
+
+    public virtual DbSet<Role> Roles { get; set; }
+
+    public virtual DbSet<UserRole> UserRoles { get; set; }
+
     private bool _isAuditing = false;
 
     /// <summary>
@@ -362,6 +368,97 @@ public partial class ReportDbContext : DbContext
 
             // 索引：優化依狀態查詢的效能
             entity.HasIndex(e => e.NewStatus, "IX_AlertStatusHistory_NewStatus");
+        });
+
+        modelBuilder.Entity<User>(entity =>
+        {
+            entity.HasKey(e => e.UserId).HasName("PK_User_UserId");
+
+            entity.ToTable("Users");
+
+            // 使用者帳號唯一索引
+            entity.HasIndex(e => e.Username, "UQ_User_Username").IsUnique();
+
+            // 電子郵件唯一索引（如果提供）
+            entity.HasIndex(e => e.Email, "IX_User_Email")
+                .IsUnique()
+                .HasFilter("[Email] IS NOT NULL");
+
+            // 優化登入查詢：依帳號和啟用狀態查詢
+            entity.HasIndex(e => new { e.Username, e.IsActive }, "IX_User_Username_IsActive");
+
+            entity.Property(e => e.UserId).ValueGeneratedOnAdd();
+            entity.Property(e => e.Username)
+                .IsRequired()
+                .HasMaxLength(100);
+            entity.Property(e => e.PasswordHash)
+                .IsRequired()
+                .HasMaxLength(512);
+            entity.Property(e => e.Email).HasMaxLength(255);
+            entity.Property(e => e.FullName).HasMaxLength(255);
+            entity.Property(e => e.IsActive)
+                .IsRequired()
+                .HasDefaultValue(true);
+            entity.Property(e => e.CreatedAt)
+                .IsRequired()
+                .HasColumnType("datetime2")
+                .HasDefaultValueSql("GETUTCDATE()");
+            entity.Property(e => e.LastLoginAt).HasColumnType("datetime2");
+        });
+
+        modelBuilder.Entity<Role>(entity =>
+        {
+            entity.HasKey(e => e.RoleId).HasName("PK_Role_RoleId");
+
+            entity.ToTable("Roles");
+
+            // 角色名稱唯一索引
+            entity.HasIndex(e => e.RoleName, "UQ_Role_RoleName").IsUnique();
+
+            entity.Property(e => e.RoleId).ValueGeneratedOnAdd();
+            entity.Property(e => e.RoleName)
+                .IsRequired()
+                .HasMaxLength(100);
+            entity.Property(e => e.DisplayName).HasMaxLength(255);
+            entity.Property(e => e.Description).HasMaxLength(1000);
+            entity.Property(e => e.CreatedAt)
+                .IsRequired()
+                .HasColumnType("datetime2")
+                .HasDefaultValueSql("GETUTCDATE()");
+        });
+
+        modelBuilder.Entity<UserRole>(entity =>
+        {
+            entity.HasKey(e => e.UserRoleId).HasName("PK_UserRole_UserRoleId");
+
+            entity.ToTable("UserRoles");
+
+            // 防止重複的使用者角色關聯
+            entity.HasIndex(e => new { e.UserId, e.RoleId }, "UQ_UserRole_UserId_RoleId").IsUnique();
+
+            // 優化查詢：依使用者 ID 查詢角色
+            entity.HasIndex(e => e.UserId, "IX_UserRole_UserId");
+
+            // 優化查詢：依角色 ID 查詢使用者
+            entity.HasIndex(e => e.RoleId, "IX_UserRole_RoleId");
+
+            entity.Property(e => e.UserRoleId).ValueGeneratedOnAdd();
+            entity.Property(e => e.UserId).IsRequired();
+            entity.Property(e => e.RoleId).IsRequired();
+
+            // 外鍵關聯到 User
+            entity.HasOne(d => d.User)
+                .WithMany(p => p.UserRoles)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_UserRole_User");
+
+            // 外鍵關聯到 Role
+            entity.HasOne(d => d.Role)
+                .WithMany(p => p.UserRoles)
+                .HasForeignKey(d => d.RoleId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_UserRole_Role");
         });
 
         OnModelCreatingPartial(modelBuilder);

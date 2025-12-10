@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using SecurityReportWeb.Database.Models;
 using SecurityReportWeb.Import.Services;
+using SecurityReportWeb.Services;
 using Microsoft.Extensions.Logging;
 using System;
 
@@ -66,6 +67,9 @@ builder.Services.AddScoped<IHtmlParserService, HtmlParserService>();
 // XLSX 解析服務
 builder.Services.AddScoped<IXlsxParserService, XlsxParserService>();
 
+// 認證服務
+builder.Services.AddScoped<IAuthService, AuthService>();
+
 // CORS 設定
 builder.Services.AddCors(options =>
 {
@@ -77,6 +81,9 @@ builder.Services.AddCors(options =>
      .AllowCredentials();
     });
 });
+
+// ✅ 驗證必要的環境變數
+ValidateRequiredEnvironmentVariables(logger);
 
 var app = builder.Build();
 
@@ -128,6 +135,50 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+// 驗證必要的環境變數
+static void ValidateRequiredEnvironmentVariables(ILogger logger)
+{
+    logger.LogInformation("=== 驗證必要的環境變數 ===");
+    
+    // 驗證 JWT_SECRET
+    var jwtSecret = Environment.GetEnvironmentVariable("JWT_SECRET");
+    if (string.IsNullOrEmpty(jwtSecret))
+    {
+        logger.LogError("❌ JWT_SECRET 環境變數未設定");
+        throw new InvalidOperationException(
+            "JWT_SECRET 環境變數未設定。請在 .env 檔案或環境變數中設定 JWT_SECRET，且長度至少需要 16 個字元（128 位元）。");
+    }
+    
+    if (jwtSecret.Contains("${"))
+    {
+        logger.LogError("❌ JWT_SECRET 包含佔位符，請設定實際的金鑰值");
+        throw new InvalidOperationException(
+            "JWT_SECRET 包含佔位符。請在 .env 檔案中設定實際的 JWT_SECRET 值，且長度至少需要 16 個字元（128 位元）。");
+    }
+    
+    if (jwtSecret.Length < 16)
+    {
+        logger.LogError("❌ JWT_SECRET 長度不足：{Length} 個字元，至少需要 16 個字元", jwtSecret.Length);
+        throw new InvalidOperationException(
+            $"JWT_SECRET 長度不足：目前為 {jwtSecret.Length} 個字元，至少需要 16 個字元（128 位元）。請設定足夠長的 JWT_SECRET。");
+    }
+    
+    logger.LogInformation("✅ JWT_SECRET 驗證通過（長度：{Length} 個字元）", jwtSecret.Length);
+    
+    // 驗證 SA_PASSWORD（可選，但建議設定）
+    var saPassword = Environment.GetEnvironmentVariable("SA_PASSWORD");
+    if (string.IsNullOrEmpty(saPassword))
+    {
+        logger.LogWarning("⚠️ SA_PASSWORD 環境變數未設定，將使用配置檔案中的值");
+    }
+    else
+    {
+        logger.LogInformation("✅ SA_PASSWORD 已設定");
+    }
+    
+    logger.LogInformation("====================================");
+}
 
 // 確保資料庫連線就緒的輔助方法
 static async Task EnsureDatabaseReady(ReportDbContext context, ILogger logger, int maxRetries = 30, int delaySeconds = 2)
