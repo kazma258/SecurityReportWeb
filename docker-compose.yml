@@ -7,6 +7,11 @@ services:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:8080
       - ConnectionStrings__DefaultConnection=Server=db,1433;Database=ReportDb;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True
+      # JWT 設定（請自行設定足夠長的金鑰，至少 16 個字元）
+      - JWT_SECRET=${JWT_SECRET}
+      # 可選：JWT Issuer 和 Audience
+      # - JWT_ISSUER=SecurityReportWeb
+      # - JWT_AUDIENCE=SecurityReportWeb
     depends_on:
       - db
 
