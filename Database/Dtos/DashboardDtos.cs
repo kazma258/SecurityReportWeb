@@ -88,6 +88,21 @@ public class DepartmentPerformanceDto
     public string UnitName { get; set; } = null!;
 
     /// <summary>
+    /// 高風險數量
+    /// </summary>
+    public int HighRiskCount { get; set; }
+
+    /// <summary>
+    /// 中風險數量
+    /// </summary>
+    public int MediumRiskCount { get; set; }
+
+    /// <summary>
+    /// 低風險數量
+    /// </summary>
+    public int LowRiskCount { get; set; }
+
+    /// <summary>
     /// 總警報數量
     /// </summary>
     public int TotalCount { get; set; }

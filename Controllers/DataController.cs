@@ -915,6 +915,9 @@ namespace SecurityReportWeb.Controllers
                     {
                         UnitName = g.Key.UnitName,
                         Manager = g.Key.Manager,
+                        HighRiskCount = g.Count(a => a.Level == "High"),
+                        MediumRiskCount = g.Count(a => a.Level == "Medium"),
+                        LowRiskCount = g.Count(a => a.Level == "Low"),
                         TotalCount = g.Count(),
                         ResolvedCount = g.Count(a => a.Status == "Closed"),
                         FixRate = 0.0 // 稍後計算
